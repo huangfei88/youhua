@@ -8,7 +8,9 @@ title Windows Server 2022 一键极限精简优化 (Azure专用)
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo 正在请求管理员权限，请在弹出窗口中点击"是"...
-    powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    powershell -Command "Start-Process -FilePath cmd.exe -ArgumentList '/c \"%~f0\"' -Verb RunAs"
+    echo 已请求管理员权限，请在新窗口中查看进度。
+    pause
     exit /b
 )
 
@@ -24,29 +26,51 @@ set "BAT_PATH=%~f0"
 set "PS1_TMP=%TEMP%\azure_optimize_%RANDOM%.ps1"
 if exist "C:\optimize_log.txt" del /f /q "C:\optimize_log.txt"
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$m='::==PS'+'START==';" ^
-    "$f=[IO.File]::ReadAllText($env:BAT_PATH,[Text.Encoding]::UTF8);" ^
-    "$s=$f.IndexOf($m)+$m.Length;" ^
-    "$e=$f.IndexOf('::==PS'+'END==');" ^
-    "$c=$f.Substring($s,$e-$s).Trim();" ^
-    "[IO.File]::WriteAllText($env:PS1_TMP,$c,[Text.Encoding]::UTF8)"
+:: 写入 bat 级启动日志，确认脚本已以管理员权限运行
+echo [BAT] 脚本启动，准备提取并执行内嵌 PowerShell... >> "C:\optimize_log.txt"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "\"[BAT] 启动时间: \" + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" >> "C:\optimize_log.txt" 2>&1
+
+echo [BAT] 正在提取内嵌 PowerShell 脚本到临时文件...
+echo [BAT] 临时文件路径: %PS1_TMP%
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $m='::==PS'+'START=='; $f=[IO.File]::ReadAllText($env:BAT_PATH,[Text.Encoding]::UTF8); $s=$f.IndexOf($m)+$m.Length; $e=$f.IndexOf('::==PS'+'END=='); if($s -le 0 -or $e -le 0){throw 'markers not found'}; $c=$f.Substring($s,$e-$s).Trim(); [IO.File]::WriteAllText($env:PS1_TMP,$c,[Text.Encoding]::UTF8); Write-Host ('[BAT] 脚本提取成功，行数: ' + $c.Split([char]10).Count) } catch { Write-Host ('[BAT] 提取异常: ' + $_.Exception.Message); exit 1 }"
 
 if %errorlevel% neq 0 (
     echo.
     echo [错误] PowerShell脚本提取失败！
     echo 请确保文件以 UTF-8 编码保存并完整下载。
+    echo [BAT-ERROR] PowerShell脚本提取失败 >> "C:\optimize_log.txt"
     pause
     exit /b 1
 )
 
+if not exist "%PS1_TMP%" (
+    echo.
+    echo [错误] 临时脚本文件未生成：%PS1_TMP%
+    echo 请检查 %%TEMP%% 目录写入权限。
+    echo [BAT-ERROR] 临时脚本文件未生成 >> "C:\optimize_log.txt"
+    pause
+    exit /b 1
+)
+
+echo [BAT] 临时脚本已生成，开始执行主优化流程...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%PS1_TMP%"
+set "PS_EXIT=%errorlevel%"
 del /f /q "%PS1_TMP%" >nul 2>&1
 
+if %PS_EXIT% neq 0 (
+    echo.
+    echo [警告] PowerShell 脚本执行结束，退出码: %PS_EXIT%
+    echo 请查看日志文件 C:\optimize_log.txt 了解详情。
+    echo [BAT-WARN] PowerShell 退出码: %PS_EXIT% >> "C:\optimize_log.txt"
+)
+
 echo.
-echo 优化完成！按任意键重启系统（语言/Defender设置需重启后生效）...
+echo 优化完成！日志已保存至 C:\optimize_log.txt
+echo.
+echo 按任意键重启系统（语言/Defender设置需重启后生效）
 echo 如不想立即重启，请直接关闭此窗口。
-pause >nul
+pause
 shutdown /r /t 10 /c "Azure VM优化完成，10秒后重启..."
 goto :eof
 
