@@ -54,7 +54,7 @@ echo New-Item -Path "$defPath\Spynet" -Force ^| Out-Null
 echo Set-ItemProperty -Path "$defPath\Spynet" -Name 'SpynetReporting'       -Value 0 -Type DWord
 echo Set-ItemProperty -Path "$defPath\Spynet" -Name 'SubmitSamplesConsent'  -Value 2 -Type DWord
 echo # 关闭Defender相关服务
-echo $defSvcs = @('WinDefend','WdNisSvc','Sense','SecurityHealthService','wscsvc','WdNisDrv','MsMpSvc')
+echo $defSvcs = @('WinDefend','WdNisSvc','Sense','SecurityHealthService','wscsvc','WdNisDrv')
 echo foreach ($s in $defSvcs) {
 echo     Stop-Service -Name $s -Force
 echo     Set-Service  -Name $s -StartupType Disabled
