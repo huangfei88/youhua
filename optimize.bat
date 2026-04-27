@@ -8,9 +8,11 @@ title Windows Server 2022 一键极限精简优化 (Azure专用)
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo 正在请求管理员权限，请在弹出窗口中点击"是"...
-    powershell -Command "Start-Process -FilePath cmd.exe -ArgumentList '/c \"%~f0\"' -Verb RunAs"
-    echo 已请求管理员权限，请在新窗口中查看进度。
-    pause
+    :: 使用 /k 而不是 /c，确保提权后的新窗口在脚本执行完毕后保持打开
+    powershell -Command "Start-Process -FilePath cmd.exe -ArgumentList '/k \"%~f0\"' -Verb RunAs"
+    echo 已在新窗口请求管理员权限，请在弹出的管理员命令行窗口中查看进度。
+    :: 使用 timeout 而不是 pause，防止 UAC 确认时的回车键意外关闭本窗口
+    timeout /t 3 /nobreak >nul
     exit /b
 )
 
@@ -28,12 +30,12 @@ if exist "C:\optimize_log.txt" del /f /q "C:\optimize_log.txt"
 
 :: 写入 bat 级启动日志，确认脚本已以管理员权限运行
 echo [BAT] 脚本启动，准备提取并执行内嵌 PowerShell... >> "C:\optimize_log.txt"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "\"[BAT] 启动时间: \" + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" >> "C:\optimize_log.txt" 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "('[BAT] 启动时间: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) | Add-Content -Path 'C:\optimize_log.txt' -Encoding UTF8"
 
 echo [BAT] 正在提取内嵌 PowerShell 脚本到临时文件...
 echo [BAT] 临时文件路径: %PS1_TMP%
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $m='::==PS'+'START=='; $f=[IO.File]::ReadAllText($env:BAT_PATH,[Text.Encoding]::UTF8); $s=$f.IndexOf($m)+$m.Length; $e=$f.IndexOf('::==PS'+'END=='); if($s -le 0 -or $e -le 0){throw 'markers not found'}; $c=$f.Substring($s,$e-$s).Trim(); [IO.File]::WriteAllText($env:PS1_TMP,$c,[Text.Encoding]::UTF8); Write-Host ('[BAT] 脚本提取成功，行数: ' + $c.Split([char]10).Count) } catch { Write-Host ('[BAT] 提取异常: ' + $_.Exception.Message); exit 1 }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$batPath='%BAT_PATH:\=\\%'; $ps1Tmp='%PS1_TMP:\=\\%'; try { $content=Get-Content -Raw -Path $batPath -Encoding UTF8; $startMarker='::==PSSTART=='; $endMarker='::==PSEND=='; $si=$content.IndexOf($startMarker); $ei=$content.IndexOf($endMarker); if($si -lt 0 -or $ei -lt 0){throw '标记未找到，请检查文件完整性'}; $ps=$content.Substring($si+$startMarker.Length,$ei-$si-$startMarker.Length).Trim(); Set-Content -Path $ps1Tmp -Value $ps -Encoding UTF8; Write-Host ('[BAT] 脚本提取成功，行数: '+$ps.Split([char]10).Count) } catch { Write-Host ('[BAT] 提取异常: '+$_.Exception.Message); exit 1 }"
 
 if %errorlevel% neq 0 (
     echo.
