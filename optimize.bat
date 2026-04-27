@@ -117,20 +117,20 @@ try {
 }
 # 关闭Defender相关服务
 $defSvcs = @('WinDefend','WdNisSvc','Sense','SecurityHealthService','wscsvc','WdNisDrv')
-foreach ($svc in $defSvcs) {
-    $s = Get-Service -Name $svc -ErrorAction SilentlyContinue
+foreach ($defSvc in $defSvcs) {
+    $s = Get-Service -Name $defSvc -ErrorAction SilentlyContinue
     if ($null -eq $s) {
         $skipCount++
-        Write-Log "  [跳过] Defender服务 $svc - 不存在" 'DarkGray'
+        Write-Log "  [跳过] Defender服务 $defSvc - 不存在" 'DarkGray'
     } else {
         try {
-            Stop-Service -Name $svc -Force
-            Set-Service  -Name $svc -StartupType Disabled -ErrorAction Stop
+            Stop-Service -Name $defSvc -Force
+            Set-Service  -Name $defSvc -StartupType Disabled -ErrorAction Stop
             $successCount++
-            Write-Log "  [成功] 已禁用Defender服务: $svc" 'Gray'
+            Write-Log "  [成功] 已禁用Defender服务: $defSvc" 'Gray'
         } catch {
             $failCount++
-            Write-Log "  [失败] Defender服务: $svc" 'Red'
+            Write-Log "  [失败] Defender服务: $defSvc" 'Red'
         }
     }
 }
@@ -222,11 +222,11 @@ $features = @(
     'SMB1Protocol','MicrosoftWindowsPowerShellV2Root'
 )
 foreach ($feat in $features) {
-    $fo = Get-WindowsOptionalFeature -Online -FeatureName $feat -ErrorAction SilentlyContinue
-    if ($null -eq $fo) {
+    $featureObj = Get-WindowsOptionalFeature -Online -FeatureName $feat -ErrorAction SilentlyContinue
+    if ($null -eq $featureObj) {
         $skipCount++
         Write-Log "  [跳过] $feat - 功能不存在" 'DarkGray'
-    } elseif ($fo.State -eq 'Disabled') {
+    } elseif ($featureObj.State -eq 'Disabled') {
         $skipCount++
         Write-Log "  [跳过] $feat - 已是禁用状态" 'DarkGray'
     } else {
