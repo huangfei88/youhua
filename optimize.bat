@@ -8,7 +8,7 @@ title Windows Server 2022 一键极限精简优化 (Azure专用)
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo 正在请求管理员权限，请在弹出窗口中点击"是"...
-    powershell -Command "Start-Process '%~f0' -Verb RunAs"
+    powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
     exit /b
 )
 
@@ -19,386 +19,402 @@ echo   Azure 2核1G 低配虚拟机专用  ^| 含Defender关闭
 echo ============================================================
 echo.
 
-:: 将内嵌PowerShell脚本写入临时文件再执行，避免转义问题
-set "PS1=%TEMP%\azure_optimize.ps1"
-set "LOGFILE=C:\optimize_log.txt"
+:: 从本文件提取并执行内嵌的 PowerShell 脚本
+set "BAT_PATH=%~f0"
+set "PS1_TMP=%TEMP%\azure_optimize_%RANDOM%.ps1"
+if exist "C:\optimize_log.txt" del /f /q "C:\optimize_log.txt"
 
-:: 如果日志文件已存在，删除后重新记录
-if exist "%LOGFILE%" del /f /q "%LOGFILE%"
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$m='::==PS'+'START==';" ^
+    "$f=[IO.File]::ReadAllText($env:BAT_PATH,[Text.Encoding]::UTF8);" ^
+    "$s=$f.IndexOf($m)+$m.Length;" ^
+    "$e=$f.IndexOf('::==PS'+'END==');" ^
+    "$c=$f.Substring($s,$e-$s).Trim();" ^
+    "[IO.File]::WriteAllText($env:PS1_TMP,$c,[Text.Encoding]::UTF8)"
 
-type nul > "%PS1%"
-echo $ErrorActionPreference = 'SilentlyContinue'>> "%PS1%"
-echo $ProgressPreference    = 'SilentlyContinue'>> "%PS1%"
-echo $LogFile      = 'C:\optimize_log.txt'>> "%PS1%"
-echo $successCount = 0>> "%PS1%"
-echo $skipCount    = 0>> "%PS1%"
-echo $failCount    = 0>> "%PS1%"
-echo $completedSteps = 0>> "%PS1%"
-echo $totalSteps     = 10>> "%PS1%"
-echo.>> "%PS1%"
-echo # ── 日志辅助函数 ──────────────────────────────────────────>> "%PS1%"
-echo function Write-Log {>> "%PS1%"
-echo     param([string]$Msg, [string]$Color = 'White')>> "%PS1%"
-echo     Write-Host $Msg -ForegroundColor $Color>> "%PS1%"
-echo     Add-Content -Path $LogFile -Value $Msg -Encoding UTF8>> "%PS1%"
-echo }>> "%PS1%"
-echo.>> "%PS1%"
-echo # 写入日志头部>> "%PS1%"
-echo $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'>> "%PS1%"
-echo Set-Content -Path $LogFile -Value "Windows Server 2022 优化脚本日志 - 执行时间: $ts" -Encoding UTF8>> "%PS1%"
-echo Add-Content -Path $LogFile -Value "============================================================" -Encoding UTF8>> "%PS1%"
-echo.>> "%PS1%"
-echo # ── 1. 语言 / 时区 ─────────────────────────────────────────>> "%PS1%"
-echo Write-Log ''>> "%PS1%"
-echo Write-Log '【1/10】切换系统语言为简体中文 + 时区 UTC+8...' 'Cyan'>> "%PS1%"
-echo try {>> "%PS1%"
-echo     Set-WinSystemLocale zh-CN -ErrorAction Stop>> "%PS1%"
-echo     Set-WinUILanguageOverride -Language zh-CN -ErrorAction Stop>> "%PS1%"
-echo     Set-Culture zh-CN -ErrorAction Stop>> "%PS1%"
-echo     Set-WinUserLanguageList zh-CN -Force -ErrorAction Stop>> "%PS1%"
-echo     Set-TimeZone -Id 'China Standard Time' -ErrorAction Stop>> "%PS1%"
-echo     $successCount++>> "%PS1%"
-echo     Write-Log '  [成功] 语言/时区设置完成' 'Green'>> "%PS1%"
-echo } catch {>> "%PS1%"
-echo     $failCount++>> "%PS1%"
-echo     Write-Log '  [失败] 语言/时区设置' 'Red'>> "%PS1%"
-echo }>> "%PS1%"
-echo $completedSteps++>> "%PS1%"
-echo Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'>> "%PS1%"
-echo.>> "%PS1%"
-echo # ── 2. 关闭 Windows Defender ────────────────────────────────>> "%PS1%"
-echo Write-Log ''>> "%PS1%"
-echo Write-Log '【2/10】关闭 Windows Defender...' 'Cyan'>> "%PS1%"
-echo # 通过组策略注册表彻底禁用>> "%PS1%"
-echo try {>> "%PS1%"
-echo     $defPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender'>> "%PS1%"
-echo     New-Item -Path $defPath -Force ^| Out-Null>> "%PS1%"
-echo     Set-ItemProperty -Path $defPath -Name 'DisableAntiSpyware'          -Value 1 -Type DWord -ErrorAction Stop>> "%PS1%"
-echo     Set-ItemProperty -Path $defPath -Name 'DisableAntiVirus'            -Value 1 -Type DWord -ErrorAction Stop>> "%PS1%"
-echo     Set-ItemProperty -Path $defPath -Name 'DisableRealtimeMonitoring'   -Value 1 -Type DWord -ErrorAction Stop>> "%PS1%"
-echo     Set-ItemProperty -Path $defPath -Name 'DisableRoutinelyTakingAction' -Value 1 -Type DWord -ErrorAction Stop>> "%PS1%"
-echo     New-Item -Path "$defPath\Real-Time Protection" -Force ^| Out-Null>> "%PS1%"
-echo     Set-ItemProperty -Path "$defPath\Real-Time Protection" -Name 'DisableRealtimeMonitoring'  -Value 1 -Type DWord -ErrorAction Stop>> "%PS1%"
-echo     Set-ItemProperty -Path "$defPath\Real-Time Protection" -Name 'DisableBehaviorMonitoring'  -Value 1 -Type DWord -ErrorAction Stop>> "%PS1%"
-echo     Set-ItemProperty -Path "$defPath\Real-Time Protection" -Name 'DisableOnAccessProtection'  -Value 1 -Type DWord -ErrorAction Stop>> "%PS1%"
-echo     Set-ItemProperty -Path "$defPath\Real-Time Protection" -Name 'DisableScanOnRealtimeEnable' -Value 1 -Type DWord -ErrorAction Stop>> "%PS1%"
-echo     New-Item -Path "$defPath\Spynet" -Force ^| Out-Null>> "%PS1%"
-echo     Set-ItemProperty -Path "$defPath\Spynet" -Name 'SpynetReporting'      -Value 0 -Type DWord -ErrorAction Stop>> "%PS1%"
-echo     Set-ItemProperty -Path "$defPath\Spynet" -Name 'SubmitSamplesConsent' -Value 2 -Type DWord -ErrorAction Stop>> "%PS1%"
-echo     $successCount++>> "%PS1%"
-echo     Write-Log '  [成功] Defender注册表策略设置完成' 'Gray'>> "%PS1%"
-echo } catch {>> "%PS1%"
-echo     $failCount++>> "%PS1%"
-echo     Write-Log '  [失败] Defender注册表策略设置' 'Red'>> "%PS1%"
-echo }>> "%PS1%"
-echo # 关闭Defender相关服务>> "%PS1%"
-echo $defSvcs = @('WinDefend','WdNisSvc','Sense','SecurityHealthService','wscsvc','WdNisDrv')>> "%PS1%"
-echo foreach ($s in $defSvcs) {>> "%PS1%"
-echo     $svc = Get-Service -Name $s -ErrorAction SilentlyContinue>> "%PS1%"
-echo     if ($null -eq $svc) {>> "%PS1%"
-echo         $skipCount++>> "%PS1%"
-echo         Write-Log "  [跳过] Defender服务 $s - 不存在" 'DarkGray'>> "%PS1%"
-echo     } else {>> "%PS1%"
-echo         try {>> "%PS1%"
-echo             Stop-Service -Name $s -Force>> "%PS1%"
-echo             Set-Service  -Name $s -StartupType Disabled -ErrorAction Stop>> "%PS1%"
-echo             $successCount++>> "%PS1%"
-echo             Write-Log "  [成功] 已禁用Defender服务: $s" 'Gray'>> "%PS1%"
-echo         } catch {>> "%PS1%"
-echo             $failCount++>> "%PS1%"
-echo             Write-Log "  [失败] Defender服务: $s" 'Red'>> "%PS1%"
-echo         }>> "%PS1%"
-echo     }>> "%PS1%"
-echo }>> "%PS1%"
-echo # 关闭Defender计划任务>> "%PS1%"
-echo $defTasks = @('Windows Defender Cache Maintenance','Windows Defender Cleanup','Windows Defender Scheduled Scan','Windows Defender Verification')>> "%PS1%"
-echo foreach ($tn in $defTasks) {>> "%PS1%"
-echo     $dt = Get-ScheduledTask -TaskPath '\Microsoft\Windows\Windows Defender\' -TaskName $tn -ErrorAction SilentlyContinue>> "%PS1%"
-echo     if ($null -eq $dt) {>> "%PS1%"
-echo         $skipCount++>> "%PS1%"
-echo         Write-Log "  [跳过] Defender任务: $tn - 不存在" 'DarkGray'>> "%PS1%"
-echo     } else {>> "%PS1%"
-echo         try {>> "%PS1%"
-echo             Disable-ScheduledTask -TaskPath '\Microsoft\Windows\Windows Defender\' -TaskName $tn -ErrorAction Stop ^| Out-Null>> "%PS1%"
-echo             $successCount++>> "%PS1%"
-echo             Write-Log "  [成功] 已禁用Defender任务: $tn" 'Gray'>> "%PS1%"
-echo         } catch {>> "%PS1%"
-echo             $failCount++>> "%PS1%"
-echo             Write-Log "  [失败] Defender任务: $tn" 'Red'>> "%PS1%"
-echo         }>> "%PS1%"
-echo     }>> "%PS1%"
-echo }>> "%PS1%"
-echo Write-Log '  Defender已关闭（重启后完全生效）' 'Green'>> "%PS1%"
-echo $completedSteps++>> "%PS1%"
-echo Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'>> "%PS1%"
-echo.>> "%PS1%"
-echo # ── 3. 极限精简服务（仅保留Azure必要项） ───────────────────>> "%PS1%"
-echo Write-Log ''>> "%PS1%"
-echo Write-Log '【3/10】禁用非必要服务（保留Azure/RDP/网络核心）...' 'Cyan'>> "%PS1%"
-echo $services = @(>> "%PS1%"
-echo     'Themes','TabletInputService','UxSms',>> "%PS1%"
-echo     'Spooler','Fax',>> "%PS1%"
-echo     'WSearch','SysMain',>> "%PS1%"
-echo     'DiagTrack','dmwappushservice','WerSvc','PcaSvc','DPS','WdiServiceHost','WdiSystemHost',>> "%PS1%"
-echo     'wuauserv','UsoSvc','DoSvc','WaaSMedicSvc',>> "%PS1%"
-echo     'XboxGipSvc','XblAuthManager','XblGameSave','XboxNetApiSvc',>> "%PS1%"
-echo     'lfsvc','SensorDataService','SensrSvc','SensorService',>> "%PS1%"
-echo     'bthserv','BthHFSrv','PhoneSvc','RmSvc','icssvc',>> "%PS1%"
-echo     'WMPNetworkSvc','RetailDemo',>> "%PS1%"
-echo     'MapsBroker',>> "%PS1%"
-echo     'SharedAccess',>> "%PS1%"
-echo     'SCardSvr','SCPolicySvc','CertPropSvc',>> "%PS1%"
-echo     'BDESVC','EFS',>> "%PS1%"
-echo     'TrkWks','SDRSVC','swprv','wbengine',>> "%PS1%"
-echo     'wisvc',>> "%PS1%"
-echo     'WlanSvc','WwanSvc','dot3svc',>> "%PS1%"
-echo     'CDPSvc','CDPUserSvc',>> "%PS1%"
-echo     'cbdhsvc','InstallService',>> "%PS1%"
-echo     'defragsvc',>> "%PS1%"
-echo     'hidserv','stisvc',>> "%PS1%"
-echo     'RemoteRegistry',>> "%PS1%"
-echo     'NcbService',>> "%PS1%"
-echo     'p2pimsvc','p2psvc','PNRPsvc','PNRPAutoReg',>> "%PS1%"
-echo     'IKEEXT',>> "%PS1%"
-echo     'ShellHWDetection',>> "%PS1%"
-echo     'AeLookupSvc',>> "%PS1%"
-echo     'seclogon',>> "%PS1%"
-echo     'HomeGroupListener','HomeGroupProvider'>> "%PS1%"
-echo )>> "%PS1%"
-echo foreach ($svc in $services) {>> "%PS1%"
-echo     $s = Get-Service -Name $svc -ErrorAction SilentlyContinue>> "%PS1%"
-echo     if ($null -eq $s) {>> "%PS1%"
-echo         $skipCount++>> "%PS1%"
-echo         Write-Log "  [跳过] $svc - 服务不存在，无需优化" 'DarkGray'>> "%PS1%"
-echo     } else {>> "%PS1%"
-echo         try {>> "%PS1%"
-echo             Stop-Service -Name $svc -Force>> "%PS1%"
-echo             Set-Service  -Name $svc -StartupType Disabled -ErrorAction Stop>> "%PS1%"
-echo             $successCount++>> "%PS1%"
-echo             Write-Log "  [成功] 已禁用: $svc" 'Gray'>> "%PS1%"
-echo         } catch {>> "%PS1%"
-echo             $failCount++>> "%PS1%"
-echo             Write-Log "  [失败] $svc" 'Red'>> "%PS1%"
-echo         }>> "%PS1%"
-echo     }>> "%PS1%"
-echo }>> "%PS1%"
-echo Write-Log '  服务精简完成' 'Green'>> "%PS1%"
-echo $completedSteps++>> "%PS1%"
-echo Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'>> "%PS1%"
-echo.>> "%PS1%"
-echo # ── 4. 关闭 Windows 功能 ────────────────────────────────────>> "%PS1%"
-echo Write-Log ''>> "%PS1%"
-echo Write-Log '【4/10】关闭不必要的 Windows 功能...' 'Cyan'>> "%PS1%"
-echo $features = @(>> "%PS1%"
-echo     'Internet-Explorer-Optional-amd64',>> "%PS1%"
-echo     'MediaPlayback','WindowsMediaPlayer',>> "%PS1%"
-echo     'Printing-PrintToPDFServices-Features',>> "%PS1%"
-echo     'Printing-XPSServices-Features',>> "%PS1%"
-echo     'WorkFolders-Client','FaxServicesClientPackage',>> "%PS1%"
-echo     'SMB1Protocol','MicrosoftWindowsPowerShellV2Root'>> "%PS1%"
-echo )>> "%PS1%"
-echo foreach ($f in $features) {>> "%PS1%"
-echo     $feat = Get-WindowsOptionalFeature -Online -FeatureName $f -ErrorAction SilentlyContinue>> "%PS1%"
-echo     if ($null -eq $feat) {>> "%PS1%"
-echo         $skipCount++>> "%PS1%"
-echo         Write-Log "  [跳过] $f - 功能不存在" 'DarkGray'>> "%PS1%"
-echo     } elseif ($feat.State -eq 'Disabled') {>> "%PS1%"
-echo         $skipCount++>> "%PS1%"
-echo         Write-Log "  [跳过] $f - 已是禁用状态" 'DarkGray'>> "%PS1%"
-echo     } else {>> "%PS1%"
-echo         try {>> "%PS1%"
-echo             Disable-WindowsOptionalFeature -Online -FeatureName $f -NoRestart -ErrorAction Stop ^| Out-Null>> "%PS1%"
-echo             $successCount++>> "%PS1%"
-echo             Write-Log "  [成功] 已关闭: $f" 'Gray'>> "%PS1%"
-echo         } catch {>> "%PS1%"
-echo             $failCount++>> "%PS1%"
-echo             Write-Log "  [失败] $f" 'Red'>> "%PS1%"
-echo         }>> "%PS1%"
-echo     }>> "%PS1%"
-echo }>> "%PS1%"
-echo Write-Log '  功能关闭完成' 'Green'>> "%PS1%"
-echo $completedSteps++>> "%PS1%"
-echo Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'>> "%PS1%"
-echo.>> "%PS1%"
-echo # ── 5. 视觉效果最佳性能 ─────────────────────────────────────>> "%PS1%"
-echo Write-Log ''>> "%PS1%"
-echo Write-Log '【5/10】视觉效果调整为最佳性能...' 'Cyan'>> "%PS1%"
-echo try {>> "%PS1%"
-echo     $regVis = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects'>> "%PS1%"
-echo     if (-not (Test-Path $regVis)) { New-Item -Path $regVis -Force ^| Out-Null }>> "%PS1%"
-echo     Set-ItemProperty -Path $regVis -Name 'VisualFXSetting' -Value 2 -ErrorAction Stop>> "%PS1%"
-echo     Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'MenuShowDelay' -Value '0' -ErrorAction Stop>> "%PS1%"
-echo     Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'DragFullWindows' -Value '0' -ErrorAction Stop>> "%PS1%"
-echo     Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name 'TaskbarAnimations' -Value 0 -ErrorAction Stop>> "%PS1%"
-echo     Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'EnableTransparency' -Value 0 -ErrorAction Stop>> "%PS1%"
-echo     $successCount++>> "%PS1%"
-echo     Write-Log '  [成功] 视觉效果设置完成' 'Green'>> "%PS1%"
-echo } catch {>> "%PS1%"
-echo     $failCount++>> "%PS1%"
-echo     Write-Log '  [失败] 视觉效果设置' 'Red'>> "%PS1%"
-echo }>> "%PS1%"
-echo $completedSteps++>> "%PS1%"
-echo Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'>> "%PS1%"
-echo.>> "%PS1%"
-echo # ── 6. 页面文件固定 2048MB ──────────────────────────────────>> "%PS1%"
-echo Write-Log ''>> "%PS1%"
-echo Write-Log '【6/10】设置虚拟内存页面文件 2048MB...' 'Cyan'>> "%PS1%"
-echo try {>> "%PS1%"
-echo     $cs = Get-WmiObject -Class Win32_ComputerSystem -EnableAllPrivileges -ErrorAction Stop>> "%PS1%"
-echo     $cs.AutomaticManagedPagefile = $false>> "%PS1%"
-echo     $cs.Put() ^| Out-Null>> "%PS1%"
-echo     Get-WmiObject -Class Win32_PageFileSetting ^| ForEach-Object { $_.Delete() }>> "%PS1%"
-echo     Set-WmiInstance -Class Win32_PageFileSetting -Arguments @{Name='C:\pagefile.sys';InitialSize=2048;MaximumSize=2048} ^| Out-Null>> "%PS1%"
-echo     $successCount++>> "%PS1%"
-echo     Write-Log '  [成功] 页面文件已固定为 2048MB' 'Green'>> "%PS1%"
-echo } catch {>> "%PS1%"
-echo     $failCount++>> "%PS1%"
-echo     Write-Log '  [失败] 页面文件设置' 'Red'>> "%PS1%"
-echo }>> "%PS1%"
-echo $completedSteps++>> "%PS1%"
-echo Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'>> "%PS1%"
-echo.>> "%PS1%"
-echo # ── 7. 高性能电源计划 ────────────────────────────────────────>> "%PS1%"
-echo Write-Log ''>> "%PS1%"
-echo Write-Log '【7/10】切换电源计划为高性能...' 'Cyan'>> "%PS1%"
-echo try {>> "%PS1%"
-echo     powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c>> "%PS1%"
-echo     powercfg /change standby-timeout-ac 0>> "%PS1%"
-echo     powercfg /change hibernate-timeout-ac 0>> "%PS1%"
-echo     $successCount++>> "%PS1%"
-echo     Write-Log '  [成功] 电源计划已切换为高性能' 'Green'>> "%PS1%"
-echo } catch {>> "%PS1%"
-echo     $failCount++>> "%PS1%"
-echo     Write-Log '  [失败] 电源计划设置' 'Red'>> "%PS1%"
-echo }>> "%PS1%"
-echo $completedSteps++>> "%PS1%"
-echo Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'>> "%PS1%"
-echo.>> "%PS1%"
-echo # ── 8. 禁用计划任务 ─────────────────────────────────────────>> "%PS1%"
-echo Write-Log ''>> "%PS1%"
-echo Write-Log '【8/10】禁用遥测/诊断/更新计划任务...' 'Cyan'>> "%PS1%"
-echo $tasks = @(>> "%PS1%"
-echo     @{P='\Microsoft\Windows\Application Experience\';    N='Microsoft Compatibility Appraiser'},>> "%PS1%"
-echo     @{P='\Microsoft\Windows\Application Experience\';    N='ProgramDataUpdater'},>> "%PS1%"
-echo     @{P='\Microsoft\Windows\Application Experience\';    N='StartupAppTask'},>> "%PS1%"
-echo     @{P='\Microsoft\Windows\Customer Experience Improvement Program\'; N='Consolidator'},>> "%PS1%"
-echo     @{P='\Microsoft\Windows\Customer Experience Improvement Program\'; N='UsbCeip'},>> "%PS1%"
-echo     @{P='\Microsoft\Windows\Windows Error Reporting\';   N='QueueReporting'},>> "%PS1%"
-echo     @{P='\Microsoft\Windows\UpdateOrchestrator\';        N='Schedule Scan'},>> "%PS1%"
-echo     @{P='\Microsoft\Windows\UpdateOrchestrator\';        N='USO_UxBroker'},>> "%PS1%"
-echo     @{P='\Microsoft\Windows\UpdateOrchestrator\';        N='Report policies'},>> "%PS1%"
-echo     @{P='\Microsoft\Windows\Diagnosis\';                 N='Scheduled'},>> "%PS1%"
-echo     @{P='\Microsoft\Windows\DiskDiagnostic\';            N='Microsoft-Windows-DiskDiagnosticDataCollector'},>> "%PS1%"
-echo     @{P='\Microsoft\Windows\Maintenance\';               N='WinSAT'},>> "%PS1%"
-echo     @{P='\Microsoft\Windows\Maps\';                      N='MapsUpdateTask'},>> "%PS1%"
-echo     @{P='\Microsoft\Windows\Maps\';                      N='MapsToastTask'},>> "%PS1%"
-echo     @{P='\Microsoft\Windows\Power Efficiency Diagnostics\'; N='AnalyzeSystem'},>> "%PS1%"
-echo     @{P='\Microsoft\Windows\Shell\';                     N='FamilySafetyMonitor'},>> "%PS1%"
-echo     @{P='\Microsoft\Windows\Shell\';                     N='FamilySafetyRefreshTask'}>> "%PS1%"
-echo )>> "%PS1%"
-echo foreach ($t in $tasks) {>> "%PS1%"
-echo     $task = Get-ScheduledTask -TaskPath $t.P -TaskName $t.N -ErrorAction SilentlyContinue>> "%PS1%"
-echo     if ($null -eq $task) {>> "%PS1%"
-echo         $skipCount++>> "%PS1%"
-echo         Write-Log "  [跳过] $($t.N) - 任务不存在" 'DarkGray'>> "%PS1%"
-echo     } elseif ($task.State -eq 'Disabled') {>> "%PS1%"
-echo         $skipCount++>> "%PS1%"
-echo         Write-Log "  [跳过] $($t.N) - 已是禁用状态" 'DarkGray'>> "%PS1%"
-echo     } else {>> "%PS1%"
-echo         try {>> "%PS1%"
-echo             Disable-ScheduledTask -TaskPath $t.P -TaskName $t.N -ErrorAction Stop ^| Out-Null>> "%PS1%"
-echo             $successCount++>> "%PS1%"
-echo             Write-Log "  [成功] 已禁用任务: $($t.N)" 'Gray'>> "%PS1%"
-echo         } catch {>> "%PS1%"
-echo             $failCount++>> "%PS1%"
-echo             Write-Log "  [失败] $($t.N)" 'Red'>> "%PS1%"
-echo         }>> "%PS1%"
-echo     }>> "%PS1%"
-echo }>> "%PS1%"
-echo Write-Log '  计划任务禁用完成' 'Green'>> "%PS1%"
-echo $completedSteps++>> "%PS1%"
-echo Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'>> "%PS1%"
-echo.>> "%PS1%"
-echo # ── 9. 注册表 + 网络优化 ────────────────────────────────────>> "%PS1%"
-echo Write-Log ''>> "%PS1%"
-echo Write-Log '【9/10】注册表 + 网络优化...' 'Cyan'>> "%PS1%"
-echo try {>> "%PS1%"
-echo     New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search' -Force ^| Out-Null>> "%PS1%"
-echo     Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search' -Name 'AllowCortana' -Value 0 -ErrorAction Stop>> "%PS1%"
-echo     New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection' -Force ^| Out-Null>> "%PS1%"
-echo     Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection' -Name 'AllowTelemetry' -Value 0 -ErrorAction Stop>> "%PS1%"
-echo     New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting' -Force ^| Out-Null>> "%PS1%"
-echo     Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting' -Name 'Disabled' -Value 1 -ErrorAction Stop>> "%PS1%"
-echo     Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control' -Name 'WaitToKillServiceTimeout' -Value '2000' -ErrorAction Stop>> "%PS1%"
-echo     Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters' -Name 'DisabledComponents' -Value 0xFF -Type DWord -ErrorAction Stop>> "%PS1%"
-echo     netsh int tcp set global autotuninglevel=normal ^| Out-Null>> "%PS1%"
-echo     netsh int tcp set global chimney=disabled ^| Out-Null>> "%PS1%"
-echo     netsh int tcp set global rss=enabled ^| Out-Null>> "%PS1%"
-echo     netsh int tcp set global timestamps=disabled ^| Out-Null>> "%PS1%"
-echo     New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient' -Force ^| Out-Null>> "%PS1%"
-echo     Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient' -Name 'EnableMulticast' -Value 0 -ErrorAction Stop>> "%PS1%"
-echo     $successCount++>> "%PS1%"
-echo     Write-Log '  [成功] 注册表/网络优化完成' 'Green'>> "%PS1%"
-echo } catch {>> "%PS1%"
-echo     $failCount++>> "%PS1%"
-echo     Write-Log '  [失败] 注册表/网络优化部分设置失败' 'Red'>> "%PS1%"
-echo }>> "%PS1%"
-echo $completedSteps++>> "%PS1%"
-echo Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'>> "%PS1%"
-echo.>> "%PS1%"
-echo # ── 10. 清理临时文件 ────────────────────────────────────────>> "%PS1%"
-echo Write-Log ''>> "%PS1%"
-echo Write-Log '【10/10】清理临时文件和系统垃圾...' 'Cyan'>> "%PS1%"
-echo $cleanPaths = @(>> "%PS1%"
-echo     "$env:TEMP\*",>> "%PS1%"
-echo     'C:\Windows\Temp\*',>> "%PS1%"
-echo     'C:\Windows\Prefetch\*',>> "%PS1%"
-echo     'C:\Windows\SoftwareDistribution\Download\*',>> "%PS1%"
-echo     'C:\ProgramData\Microsoft\Windows\WER\ReportQueue\*',>> "%PS1%"
-echo     'C:\ProgramData\Microsoft\Windows\WER\ReportArchive\*'>> "%PS1%"
-echo )>> "%PS1%"
-echo foreach ($p in $cleanPaths) {>> "%PS1%"
-echo     try {>> "%PS1%"
-echo         Remove-Item -Path $p -Recurse -Force -ErrorAction Stop>> "%PS1%"
-echo         $successCount++>> "%PS1%"
-echo         Write-Log "  [成功] 已清理: $p" 'Gray'>> "%PS1%"
-echo     } catch {>> "%PS1%"
-echo         $skipCount++>> "%PS1%"
-echo         Write-Log "  [跳过] $p - 路径不存在或无内容" 'DarkGray'>> "%PS1%"
-echo     }>> "%PS1%"
-echo }>> "%PS1%"
-echo Write-Log '  清理完成' 'Green'>> "%PS1%"
-echo $completedSteps++>> "%PS1%"
-echo Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'>> "%PS1%"
-echo.>> "%PS1%"
-echo # ── 汇总报告 ────────────────────────────────────────────────>> "%PS1%"
-echo $totalItems = $successCount + $skipCount + $failCount>> "%PS1%"
-echo if ($totalItems -gt 0) {>> "%PS1%"
-echo     $itemRate = [math]::Round(($successCount + $skipCount) / $totalItems * 100, 1)>> "%PS1%"
-echo } else { $itemRate = 0 }>> "%PS1%"
-echo $stepRate = [math]::Round($completedSteps / $totalSteps * 100, 1)>> "%PS1%"
-echo Write-Log ''>> "%PS1%"
-echo Write-Log '============================================================' 'Yellow'>> "%PS1%"
-echo Write-Log '  优化结果汇总' 'Yellow'>> "%PS1%"
-echo Write-Log '------------------------------------------------------------' 'Yellow'>> "%PS1%"
-echo Write-Log "  [成功] 优化完成: $successCount 项" 'Green'>> "%PS1%"
-echo Write-Log "  [跳过] 无需优化: $skipCount 项" 'DarkGray'>> "%PS1%"
-echo Write-Log "  [失败] 优化失败: $failCount 项" 'Red'>> "%PS1%"
-echo Write-Log '------------------------------------------------------------' 'Yellow'>> "%PS1%"
-echo Write-Log "  脚本步骤完成度: $completedSteps / $totalSteps ($stepRate%%)" 'Cyan'>> "%PS1%"
-echo Write-Log "  优化项完成率:   $($successCount + $skipCount) / $totalItems ($itemRate%%)" 'Cyan'>> "%PS1%"
-echo Write-Log '------------------------------------------------------------' 'Yellow'>> "%PS1%"
-echo Write-Log '  保留服务: RDP(TermService) / WMI / DHCP / DNS' 'Yellow'>> "%PS1%"
-echo Write-Log '  保留服务: Azure Agent / RPC / EventLog / Netlogon' 'Yellow'>> "%PS1%"
-echo Write-Log '  Windows Defender 将在重启后完全关闭。' 'Yellow'>> "%PS1%"
-echo Write-Log '============================================================' 'Yellow'>> "%PS1%"
-echo Write-Log "  日志已保存至: C:\optimize_log.txt" 'Cyan'>> "%PS1%"
+if %errorlevel% neq 0 (
+    echo.
+    echo [错误] PowerShell脚本提取失败！
+    echo 请确保文件以 UTF-8 编码保存并完整下载。
+    pause
+    exit /b 1
+)
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%PS1%"
-del /f /q "%PS1%" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PS1_TMP%"
+del /f /q "%PS1_TMP%" >nul 2>&1
 
 echo.
 echo 优化完成！按任意键重启系统（语言/Defender设置需重启后生效）...
 echo 如不想立即重启，请直接关闭此窗口。
 pause >nul
 shutdown /r /t 10 /c "Azure VM优化完成，10秒后重启..."
+goto :eof
+
+::==PSSTART==
+$ErrorActionPreference = 'SilentlyContinue'
+$ProgressPreference    = 'SilentlyContinue'
+$LogFile      = 'C:\optimize_log.txt'
+$successCount = 0
+$skipCount    = 0
+$failCount    = 0
+$completedSteps = 0
+$totalSteps     = 10
+
+# ── 日志辅助函数 ──────────────────────────────────────────
+function Write-Log {
+    param([string]$Msg, [string]$Color = 'White')
+    Write-Host $Msg -ForegroundColor $Color
+    Add-Content -Path $LogFile -Value $Msg -Encoding UTF8
+}
+
+# 写入日志头部
+$ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+Set-Content -Path $LogFile -Value "Windows Server 2022 优化脚本日志 - 执行时间: $ts" -Encoding UTF8
+Add-Content -Path $LogFile -Value "============================================================" -Encoding UTF8
+
+# ── 1. 语言 / 时区 ─────────────────────────────────────────
+Write-Log ''
+Write-Log '【1/10】切换系统语言为简体中文 + 时区 UTC+8...' 'Cyan'
+try {
+    Set-WinSystemLocale zh-CN -ErrorAction Stop
+    Set-WinUILanguageOverride -Language zh-CN -ErrorAction Stop
+    Set-Culture zh-CN -ErrorAction Stop
+    Set-WinUserLanguageList zh-CN -Force -ErrorAction Stop
+    Set-TimeZone -Id 'China Standard Time' -ErrorAction Stop
+    $successCount++
+    Write-Log '  [成功] 语言/时区设置完成' 'Green'
+} catch {
+    $failCount++
+    Write-Log '  [失败] 语言/时区设置' 'Red'
+}
+$completedSteps++
+Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
+
+# ── 2. 关闭 Windows Defender ────────────────────────────────
+Write-Log ''
+Write-Log '【2/10】关闭 Windows Defender...' 'Cyan'
+# 通过组策略注册表彻底禁用
+try {
+    $defPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender'
+    New-Item -Path $defPath -Force | Out-Null
+    Set-ItemProperty -Path $defPath -Name 'DisableAntiSpyware'           -Value 1 -Type DWord -ErrorAction Stop
+    Set-ItemProperty -Path $defPath -Name 'DisableAntiVirus'             -Value 1 -Type DWord -ErrorAction Stop
+    Set-ItemProperty -Path $defPath -Name 'DisableRealtimeMonitoring'    -Value 1 -Type DWord -ErrorAction Stop
+    Set-ItemProperty -Path $defPath -Name 'DisableRoutinelyTakingAction' -Value 1 -Type DWord -ErrorAction Stop
+    New-Item -Path "$defPath\Real-Time Protection" -Force | Out-Null
+    Set-ItemProperty -Path "$defPath\Real-Time Protection" -Name 'DisableRealtimeMonitoring'   -Value 1 -Type DWord -ErrorAction Stop
+    Set-ItemProperty -Path "$defPath\Real-Time Protection" -Name 'DisableBehaviorMonitoring'   -Value 1 -Type DWord -ErrorAction Stop
+    Set-ItemProperty -Path "$defPath\Real-Time Protection" -Name 'DisableOnAccessProtection'   -Value 1 -Type DWord -ErrorAction Stop
+    Set-ItemProperty -Path "$defPath\Real-Time Protection" -Name 'DisableScanOnRealtimeEnable' -Value 1 -Type DWord -ErrorAction Stop
+    New-Item -Path "$defPath\Spynet" -Force | Out-Null
+    Set-ItemProperty -Path "$defPath\Spynet" -Name 'SpynetReporting'      -Value 0 -Type DWord -ErrorAction Stop
+    Set-ItemProperty -Path "$defPath\Spynet" -Name 'SubmitSamplesConsent' -Value 2 -Type DWord -ErrorAction Stop
+    $successCount++
+    Write-Log '  [成功] Defender注册表策略设置完成' 'Gray'
+} catch {
+    $failCount++
+    Write-Log '  [失败] Defender注册表策略设置' 'Red'
+}
+# 关闭Defender相关服务
+$defSvcs = @('WinDefend','WdNisSvc','Sense','SecurityHealthService','wscsvc','WdNisDrv')
+foreach ($svc in $defSvcs) {
+    $s = Get-Service -Name $svc -ErrorAction SilentlyContinue
+    if ($null -eq $s) {
+        $skipCount++
+        Write-Log "  [跳过] Defender服务 $svc - 不存在" 'DarkGray'
+    } else {
+        try {
+            Stop-Service -Name $svc -Force
+            Set-Service  -Name $svc -StartupType Disabled -ErrorAction Stop
+            $successCount++
+            Write-Log "  [成功] 已禁用Defender服务: $svc" 'Gray'
+        } catch {
+            $failCount++
+            Write-Log "  [失败] Defender服务: $svc" 'Red'
+        }
+    }
+}
+# 关闭Defender计划任务
+$defTasks = @('Windows Defender Cache Maintenance','Windows Defender Cleanup','Windows Defender Scheduled Scan','Windows Defender Verification')
+foreach ($tn in $defTasks) {
+    $dt = Get-ScheduledTask -TaskPath '\Microsoft\Windows\Windows Defender\' -TaskName $tn -ErrorAction SilentlyContinue
+    if ($null -eq $dt) {
+        $skipCount++
+        Write-Log "  [跳过] Defender任务: $tn - 不存在" 'DarkGray'
+    } else {
+        try {
+            Disable-ScheduledTask -TaskPath '\Microsoft\Windows\Windows Defender\' -TaskName $tn -ErrorAction Stop | Out-Null
+            $successCount++
+            Write-Log "  [成功] 已禁用Defender任务: $tn" 'Gray'
+        } catch {
+            $failCount++
+            Write-Log "  [失败] Defender任务: $tn" 'Red'
+        }
+    }
+}
+Write-Log '  Defender已关闭（重启后完全生效）' 'Green'
+$completedSteps++
+Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
+
+# ── 3. 极限精简服务（仅保留Azure必要项） ───────────────────
+Write-Log ''
+Write-Log '【3/10】禁用非必要服务（保留Azure/RDP/网络核心）...' 'Cyan'
+$services = @(
+    'Themes','TabletInputService','UxSms',
+    'Spooler','Fax',
+    'WSearch','SysMain',
+    'DiagTrack','dmwappushservice','WerSvc','PcaSvc','DPS','WdiServiceHost','WdiSystemHost',
+    'wuauserv','UsoSvc','DoSvc','WaaSMedicSvc',
+    'XboxGipSvc','XblAuthManager','XblGameSave','XboxNetApiSvc',
+    'lfsvc','SensorDataService','SensrSvc','SensorService',
+    'bthserv','BthHFSrv','PhoneSvc','RmSvc','icssvc',
+    'WMPNetworkSvc','RetailDemo',
+    'MapsBroker',
+    'SharedAccess',
+    'SCardSvr','SCPolicySvc','CertPropSvc',
+    'BDESVC','EFS',
+    'TrkWks','SDRSVC','swprv','wbengine',
+    'wisvc',
+    'WlanSvc','WwanSvc','dot3svc',
+    'CDPSvc','CDPUserSvc',
+    'cbdhsvc','InstallService',
+    'defragsvc',
+    'hidserv','stisvc',
+    'RemoteRegistry',
+    'NcbService',
+    'p2pimsvc','p2psvc','PNRPsvc','PNRPAutoReg',
+    'IKEEXT',
+    'ShellHWDetection',
+    'AeLookupSvc',
+    'seclogon',
+    'HomeGroupListener','HomeGroupProvider'
+)
+foreach ($svc in $services) {
+    $s = Get-Service -Name $svc -ErrorAction SilentlyContinue
+    if ($null -eq $s) {
+        $skipCount++
+        Write-Log "  [跳过] $svc - 服务不存在，无需优化" 'DarkGray'
+    } else {
+        try {
+            Stop-Service -Name $svc -Force
+            Set-Service  -Name $svc -StartupType Disabled -ErrorAction Stop
+            $successCount++
+            Write-Log "  [成功] 已禁用: $svc" 'Gray'
+        } catch {
+            $failCount++
+            Write-Log "  [失败] $svc" 'Red'
+        }
+    }
+}
+Write-Log '  服务精简完成' 'Green'
+$completedSteps++
+Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
+
+# ── 4. 关闭 Windows 功能 ────────────────────────────────────
+Write-Log ''
+Write-Log '【4/10】关闭不必要的 Windows 功能...' 'Cyan'
+$features = @(
+    'Internet-Explorer-Optional-amd64',
+    'MediaPlayback','WindowsMediaPlayer',
+    'Printing-PrintToPDFServices-Features',
+    'Printing-XPSServices-Features',
+    'WorkFolders-Client','FaxServicesClientPackage',
+    'SMB1Protocol','MicrosoftWindowsPowerShellV2Root'
+)
+foreach ($feat in $features) {
+    $fo = Get-WindowsOptionalFeature -Online -FeatureName $feat -ErrorAction SilentlyContinue
+    if ($null -eq $fo) {
+        $skipCount++
+        Write-Log "  [跳过] $feat - 功能不存在" 'DarkGray'
+    } elseif ($fo.State -eq 'Disabled') {
+        $skipCount++
+        Write-Log "  [跳过] $feat - 已是禁用状态" 'DarkGray'
+    } else {
+        try {
+            Disable-WindowsOptionalFeature -Online -FeatureName $feat -NoRestart -ErrorAction Stop | Out-Null
+            $successCount++
+            Write-Log "  [成功] 已关闭: $feat" 'Gray'
+        } catch {
+            $failCount++
+            Write-Log "  [失败] $feat" 'Red'
+        }
+    }
+}
+Write-Log '  功能关闭完成' 'Green'
+$completedSteps++
+Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
+
+# ── 5. 视觉效果最佳性能 ─────────────────────────────────────
+Write-Log ''
+Write-Log '【5/10】视觉效果调整为最佳性能...' 'Cyan'
+try {
+    $regVis = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects'
+    if (-not (Test-Path $regVis)) { New-Item -Path $regVis -Force | Out-Null }
+    Set-ItemProperty -Path $regVis -Name 'VisualFXSetting' -Value 2 -ErrorAction Stop
+    Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'MenuShowDelay' -Value '0' -ErrorAction Stop
+    Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'DragFullWindows' -Value '0' -ErrorAction Stop
+    Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name 'TaskbarAnimations' -Value 0 -ErrorAction Stop
+    Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'EnableTransparency' -Value 0 -ErrorAction Stop
+    $successCount++
+    Write-Log '  [成功] 视觉效果设置完成' 'Green'
+} catch {
+    $failCount++
+    Write-Log '  [失败] 视觉效果设置' 'Red'
+}
+$completedSteps++
+Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
+
+# ── 6. 页面文件固定 2048MB ──────────────────────────────────
+Write-Log ''
+Write-Log '【6/10】设置虚拟内存页面文件 2048MB...' 'Cyan'
+try {
+    $cs = Get-WmiObject -Class Win32_ComputerSystem -EnableAllPrivileges -ErrorAction Stop
+    $cs.AutomaticManagedPagefile = $false
+    $cs.Put() | Out-Null
+    Get-WmiObject -Class Win32_PageFileSetting | ForEach-Object { $_.Delete() }
+    Set-WmiInstance -Class Win32_PageFileSetting -Arguments @{Name='C:\pagefile.sys';InitialSize=2048;MaximumSize=2048} | Out-Null
+    $successCount++
+    Write-Log '  [成功] 页面文件已固定为 2048MB' 'Green'
+} catch {
+    $failCount++
+    Write-Log '  [失败] 页面文件设置' 'Red'
+}
+$completedSteps++
+Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
+
+# ── 7. 高性能电源计划 ────────────────────────────────────────
+Write-Log ''
+Write-Log '【7/10】切换电源计划为高性能...' 'Cyan'
+try {
+    powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
+    powercfg /change standby-timeout-ac 0
+    powercfg /change hibernate-timeout-ac 0
+    $successCount++
+    Write-Log '  [成功] 电源计划已切换为高性能' 'Green'
+} catch {
+    $failCount++
+    Write-Log '  [失败] 电源计划设置' 'Red'
+}
+$completedSteps++
+Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
+
+# ── 8. 禁用计划任务 ─────────────────────────────────────────
+Write-Log ''
+Write-Log '【8/10】禁用遥测/诊断/更新计划任务...' 'Cyan'
+$tasks = @(
+    @{P='\Microsoft\Windows\Application Experience\';    N='Microsoft Compatibility Appraiser'},
+    @{P='\Microsoft\Windows\Application Experience\';    N='ProgramDataUpdater'},
+    @{P='\Microsoft\Windows\Application Experience\';    N='StartupAppTask'},
+    @{P='\Microsoft\Windows\Customer Experience Improvement Program\'; N='Consolidator'},
+    @{P='\Microsoft\Windows\Customer Experience Improvement Program\'; N='UsbCeip'},
+    @{P='\Microsoft\Windows\Windows Error Reporting\';   N='QueueReporting'},
+    @{P='\Microsoft\Windows\UpdateOrchestrator\';        N='Schedule Scan'},
+    @{P='\Microsoft\Windows\UpdateOrchestrator\';        N='USO_UxBroker'},
+    @{P='\Microsoft\Windows\UpdateOrchestrator\';        N='Report policies'},
+    @{P='\Microsoft\Windows\Diagnosis\';                 N='Scheduled'},
+    @{P='\Microsoft\Windows\DiskDiagnostic\';            N='Microsoft-Windows-DiskDiagnosticDataCollector'},
+    @{P='\Microsoft\Windows\Maintenance\';               N='WinSAT'},
+    @{P='\Microsoft\Windows\Maps\';                      N='MapsUpdateTask'},
+    @{P='\Microsoft\Windows\Maps\';                      N='MapsToastTask'},
+    @{P='\Microsoft\Windows\Power Efficiency Diagnostics\'; N='AnalyzeSystem'},
+    @{P='\Microsoft\Windows\Shell\';                     N='FamilySafetyMonitor'},
+    @{P='\Microsoft\Windows\Shell\';                     N='FamilySafetyRefreshTask'}
+)
+foreach ($t in $tasks) {
+    $task = Get-ScheduledTask -TaskPath $t.P -TaskName $t.N -ErrorAction SilentlyContinue
+    if ($null -eq $task) {
+        $skipCount++
+        Write-Log "  [跳过] $($t.N) - 任务不存在" 'DarkGray'
+    } elseif ($task.State -eq 'Disabled') {
+        $skipCount++
+        Write-Log "  [跳过] $($t.N) - 已是禁用状态" 'DarkGray'
+    } else {
+        try {
+            Disable-ScheduledTask -TaskPath $t.P -TaskName $t.N -ErrorAction Stop | Out-Null
+            $successCount++
+            Write-Log "  [成功] 已禁用任务: $($t.N)" 'Gray'
+        } catch {
+            $failCount++
+            Write-Log "  [失败] $($t.N)" 'Red'
+        }
+    }
+}
+Write-Log '  计划任务禁用完成' 'Green'
+$completedSteps++
+Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
+
+# ── 9. 注册表 + 网络优化 ────────────────────────────────────
+Write-Log ''
+Write-Log '【9/10】注册表 + 网络优化...' 'Cyan'
+try {
+    New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search' -Force | Out-Null
+    Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search' -Name 'AllowCortana' -Value 0 -ErrorAction Stop
+    New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection' -Force | Out-Null
+    Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection' -Name 'AllowTelemetry' -Value 0 -ErrorAction Stop
+    New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting' -Force | Out-Null
+    Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting' -Name 'Disabled' -Value 1 -ErrorAction Stop
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control' -Name 'WaitToKillServiceTimeout' -Value '2000' -ErrorAction Stop
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters' -Name 'DisabledComponents' -Value 0xFF -Type DWord -ErrorAction Stop
+    netsh int tcp set global autotuninglevel=normal | Out-Null
+    netsh int tcp set global chimney=disabled | Out-Null
+    netsh int tcp set global rss=enabled | Out-Null
+    netsh int tcp set global timestamps=disabled | Out-Null
+    New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient' -Force | Out-Null
+    Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient' -Name 'EnableMulticast' -Value 0 -ErrorAction Stop
+    $successCount++
+    Write-Log '  [成功] 注册表/网络优化完成' 'Green'
+} catch {
+    $failCount++
+    Write-Log '  [失败] 注册表/网络优化部分设置失败' 'Red'
+}
+$completedSteps++
+Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
+
+# ── 10. 清理临时文件 ────────────────────────────────────────
+Write-Log ''
+Write-Log '【10/10】清理临时文件和系统垃圾...' 'Cyan'
+$cleanPaths = @(
+    "$env:TEMP\*",
+    'C:\Windows\Temp\*',
+    'C:\Windows\Prefetch\*',
+    'C:\Windows\SoftwareDistribution\Download\*',
+    'C:\ProgramData\Microsoft\Windows\WER\ReportQueue\*',
+    'C:\ProgramData\Microsoft\Windows\WER\ReportArchive\*'
+)
+foreach ($p in $cleanPaths) {
+    try {
+        Remove-Item -Path $p -Recurse -Force -ErrorAction Stop
+        $successCount++
+        Write-Log "  [成功] 已清理: $p" 'Gray'
+    } catch {
+        $skipCount++
+        Write-Log "  [跳过] $p - 路径不存在或无内容" 'DarkGray'
+    }
+}
+Write-Log '  清理完成' 'Green'
+$completedSteps++
+Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
+
+# ── 汇总报告 ────────────────────────────────────────────────
+$totalItems = $successCount + $skipCount + $failCount
+if ($totalItems -gt 0) {
+    $itemRate = [math]::Round(($successCount + $skipCount) / $totalItems * 100, 1)
+} else { $itemRate = 0 }
+$stepRate = [math]::Round($completedSteps / $totalSteps * 100, 1)
+Write-Log ''
+Write-Log '============================================================' 'Yellow'
+Write-Log '  优化结果汇总' 'Yellow'
+Write-Log '------------------------------------------------------------' 'Yellow'
+Write-Log "  [成功] 优化完成: $successCount 项" 'Green'
+Write-Log "  [跳过] 无需优化: $skipCount 项" 'DarkGray'
+Write-Log "  [失败] 优化失败: $failCount 项" 'Red'
+Write-Log '------------------------------------------------------------' 'Yellow'
+Write-Log "  脚本步骤完成度: $completedSteps / $totalSteps ($stepRate%)" 'Cyan'
+Write-Log "  优化项完成率:   $($successCount + $skipCount) / $totalItems ($itemRate%)" 'Cyan'
+Write-Log '------------------------------------------------------------' 'Yellow'
+Write-Log '  保留服务: RDP(TermService) / WMI / DHCP / DNS' 'Yellow'
+Write-Log '  保留服务: Azure Agent / RPC / EventLog / Netlogon' 'Yellow'
+Write-Log '  Windows Defender 将在重启后完全关闭。' 'Yellow'
+Write-Log '============================================================' 'Yellow'
+Write-Log "  日志已保存至: C:\optimize_log.txt" 'Cyan'
+::==PSEND==
