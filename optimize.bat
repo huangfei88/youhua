@@ -5,7 +5,9 @@ title Windows Server 2022 一键极限精简优化 (Azure专用)
 :: ============================================================
 :: 自动请求管理员权限
 :: ============================================================
-net session >nul 2>&1
+:: 使用 PowerShell IsInRole 检测管理员权限（不依赖 Server 服务）
+:: 已是管理员时退出码=0，非管理员时退出码=1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "exit [int](-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator))"
 if %errorlevel% neq 0 (
     echo 正在请求管理员权限，请在弹出窗口中点击"是"...
     :: 使用 /k 而不是 /c，确保提权后的新窗口在脚本执行完毕后保持打开
@@ -93,9 +95,9 @@ function Write-Log {
     Add-Content -Path $LogFile -Value $Msg -Encoding UTF8
 }
 
-# 写入日志头部
+# 写入日志头部（追加模式，保留BAT层已写入的启动记录）
 $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-Set-Content -Path $LogFile -Value "Windows Server 2022 优化脚本日志 - 执行时间: $ts" -Encoding UTF8
+Add-Content -Path $LogFile -Value "Windows Server 2022 优化脚本日志 - 执行时间: $ts" -Encoding UTF8
 Add-Content -Path $LogFile -Value "============================================================" -Encoding UTF8
 
 # ── 1. 语言 / 时区 ─────────────────────────────────────────
