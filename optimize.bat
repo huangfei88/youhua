@@ -406,8 +406,7 @@ try {
 $netshOK = $true
 netsh int tcp set global autotuninglevel=normal 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) { $netshOK = $false }
-netsh int tcp set global chimney=disabled 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) { $netshOK = $false }
+# chimney 选项已在 Windows Server 2012 R2 后移除，Server 2022 不支持，跳过
 netsh int tcp set global rss=enabled 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) { $netshOK = $false }
 netsh int tcp set global timestamps=disabled 2>$null | Out-Null
