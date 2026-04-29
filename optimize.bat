@@ -318,15 +318,20 @@ Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
 # ── 7. 高性能电源计划 ────────────────────────────────────────
 Write-Log ''
 Write-Log '【7/10】切换电源计划为高性能...' 'Cyan'
-try {
-    powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
-    powercfg /change standby-timeout-ac 0
-    powercfg /change hibernate-timeout-ac 0
+# powercfg 是外部命令，不会抛出 PowerShell 异常，必须用 $LASTEXITCODE 判断
+$step7OK = $true
+powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>$null
+if ($LASTEXITCODE -ne 0) { $step7OK = $false }
+powercfg /change standby-timeout-ac 0 2>$null
+if ($LASTEXITCODE -ne 0) { $step7OK = $false }
+powercfg /change hibernate-timeout-ac 0 2>$null
+if ($LASTEXITCODE -ne 0) { $step7OK = $false }
+if ($step7OK) {
     $successCount++
     Write-Log '  [成功] 电源计划已切换为高性能' 'Green'
-} catch {
+} else {
     $failCount++
-    Write-Log '  [失败] 电源计划设置' 'Red'
+    Write-Log '  [失败] 电源计划设置（Azure VM 可能不支持此电源计划GUID）' 'Red'
 }
 $completedSteps++
 Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
@@ -379,6 +384,7 @@ Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
 # ── 9. 注册表 + 网络优化 ────────────────────────────────────
 Write-Log ''
 Write-Log '【9/10】注册表 + 网络优化...' 'Cyan'
+# 注册表部分（使用 try/catch，Set-ItemProperty 会抛出 PS 异常）
 try {
     New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search' -Force | Out-Null
     Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search' -Name 'AllowCortana' -Value 0 -ErrorAction Stop
@@ -388,17 +394,30 @@ try {
     Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting' -Name 'Disabled' -Value 1 -ErrorAction Stop
     Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control' -Name 'WaitToKillServiceTimeout' -Value '2000' -ErrorAction Stop
     Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters' -Name 'DisabledComponents' -Value 0xFF -Type DWord -ErrorAction Stop
-    netsh int tcp set global autotuninglevel=normal | Out-Null
-    netsh int tcp set global chimney=disabled | Out-Null
-    netsh int tcp set global rss=enabled | Out-Null
-    netsh int tcp set global timestamps=disabled | Out-Null
     New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient' -Force | Out-Null
     Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient' -Name 'EnableMulticast' -Value 0 -ErrorAction Stop
     $successCount++
-    Write-Log '  [成功] 注册表/网络优化完成' 'Green'
+    Write-Log '  [成功] 注册表优化完成' 'Green'
 } catch {
     $failCount++
-    Write-Log '  [失败] 注册表/网络优化部分设置失败' 'Red'
+    Write-Log '  [失败] 注册表优化部分设置失败' 'Red'
+}
+# netsh 是外部命令，不会抛出 PS 异常，必须用 $LASTEXITCODE 判断
+$netshOK = $true
+netsh int tcp set global autotuninglevel=normal 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) { $netshOK = $false }
+netsh int tcp set global chimney=disabled 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) { $netshOK = $false }
+netsh int tcp set global rss=enabled 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) { $netshOK = $false }
+netsh int tcp set global timestamps=disabled 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) { $netshOK = $false }
+if ($netshOK) {
+    $successCount++
+    Write-Log '  [成功] 网络(TCP)优化完成' 'Green'
+} else {
+    $failCount++
+    Write-Log '  [失败] 网络(TCP)优化部分命令执行失败' 'Red'
 }
 $completedSteps++
 Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
