@@ -3,26 +3,30 @@ chcp 65001 >nul
 title Windows Server 2022 一键极限精简优化 (Azure专用)
 
 :: ============================================================
-:: 自动请求管理员权限
+:: 自动请求管理员权限（防止无限重启循环）
 :: ============================================================
-:: 使用 net session 检测管理员权限（最可靠的方法，无额外依赖）
-net session >nul 2>&1
-if %errorlevel% neq 0 (
-    echo ============================================================
-    echo   需要管理员权限，正在以管理员身份重新启动...
-    echo   请在随后弹出的"用户账户控制"对话框中点击"是"
-    echo ============================================================
-    echo.
-    :: 直接以管理员身份重新启动本脚本，避免 cmd.exe /k 参数引号转义问题
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process '%~f0' -Verb RunAs"
-    echo.
-    echo 已请求管理员权限，请在UAC弹窗中点击"是"后查看新弹出的命令行窗口。
-    echo 若未出现新窗口，请右键本文件，选择"以管理员身份运行"。
-    echo.
-    pause
-    exit /b
-)
+:: 若已携带 --elevated 参数，表示已通过权限重启，直接运行
+if /i "%~1"=="--elevated" goto :run_as_admin
 
+:: 使用 PowerShell 检测管理员权限（不依赖 LanmanServer 服务，兼容 Windows Server 2022 极简安装）
+powershell -NoProfile -ExecutionPolicy Bypass -Command "if(([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){exit 0}else{exit 1}"
+if %errorlevel% equ 0 goto :run_as_admin
+
+echo ============================================================
+echo   需要管理员权限，正在以管理员身份重新启动...
+echo   请在随后弹出的"用户账户控制"对话框中点击"是"
+echo ============================================================
+echo.
+:: 传递 --elevated 参数，防止新窗口再次进入权限检测循环
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -ArgumentList '--elevated' -Verb RunAs"
+echo.
+echo 已请求管理员权限，请在UAC弹窗中点击"是"后查看新弹出的命令行窗口。
+echo 若未出现新窗口，请右键本文件，选择"以管理员身份运行"。
+echo.
+pause
+exit /b
+
+:run_as_admin
 echo.
 echo ============================================================
 echo   Windows Server 2022 一键极限精简优化脚本
