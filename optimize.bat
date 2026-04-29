@@ -5,16 +5,21 @@ title Windows Server 2022 一键极限精简优化 (Azure专用)
 :: ============================================================
 :: 自动请求管理员权限
 :: ============================================================
-:: 使用 PowerShell IsInRole 检测管理员权限（不依赖 Server 服务）
-:: 已是管理员时退出码=0，非管理员时退出码=1
-powershell -NoProfile -ExecutionPolicy Bypass -Command "exit [int](-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator))"
+:: 使用 net session 检测管理员权限（最可靠的方法，无额外依赖）
+net session >nul 2>&1
 if %errorlevel% neq 0 (
-    echo 正在请求管理员权限，请在弹出窗口中点击"是"...
-    :: 使用 /k 而不是 /c，确保提权后的新窗口在脚本执行完毕后保持打开
-    powershell -Command "Start-Process -FilePath cmd.exe -ArgumentList '/k \"%~f0\"' -Verb RunAs"
-    echo 已在新窗口请求管理员权限，请在弹出的管理员命令行窗口中查看进度。
-    :: 使用 timeout 而不是 pause，防止 UAC 确认时的回车键意外关闭本窗口
-    timeout /t 3 /nobreak >nul
+    echo ============================================================
+    echo   需要管理员权限，正在以管理员身份重新启动...
+    echo   请在随后弹出的"用户账户控制"对话框中点击"是"
+    echo ============================================================
+    echo.
+    :: 直接以管理员身份重新启动本脚本，避免 cmd.exe /k 参数引号转义问题
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process '%~f0' -Verb RunAs"
+    echo.
+    echo 已请求管理员权限，请在UAC弹窗中点击"是"后查看新弹出的命令行窗口。
+    echo 若未出现新窗口，请右键本文件，选择"以管理员身份运行"。
+    echo.
+    pause
     exit /b
 )
 
@@ -313,15 +318,20 @@ Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
 # ── 7. 高性能电源计划 ────────────────────────────────────────
 Write-Log ''
 Write-Log '【7/10】切换电源计划为高性能...' 'Cyan'
-try {
-    powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
-    powercfg /change standby-timeout-ac 0
-    powercfg /change hibernate-timeout-ac 0
+# powercfg 是外部命令，不会抛出 PowerShell 异常，必须用 $LASTEXITCODE 判断
+$step7OK = $true
+powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>$null
+if ($LASTEXITCODE -ne 0) { $step7OK = $false }
+powercfg /change standby-timeout-ac 0 2>$null
+if ($LASTEXITCODE -ne 0) { $step7OK = $false }
+powercfg /change hibernate-timeout-ac 0 2>$null
+if ($LASTEXITCODE -ne 0) { $step7OK = $false }
+if ($step7OK) {
     $successCount++
     Write-Log '  [成功] 电源计划已切换为高性能' 'Green'
-} catch {
+} else {
     $failCount++
-    Write-Log '  [失败] 电源计划设置' 'Red'
+    Write-Log '  [失败] 电源计划设置（Azure VM 可能不支持此电源计划GUID）' 'Red'
 }
 $completedSteps++
 Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
@@ -374,6 +384,7 @@ Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
 # ── 9. 注册表 + 网络优化 ────────────────────────────────────
 Write-Log ''
 Write-Log '【9/10】注册表 + 网络优化...' 'Cyan'
+# 注册表部分（使用 try/catch，Set-ItemProperty 会抛出 PS 异常）
 try {
     New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search' -Force | Out-Null
     Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search' -Name 'AllowCortana' -Value 0 -ErrorAction Stop
@@ -383,17 +394,29 @@ try {
     Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting' -Name 'Disabled' -Value 1 -ErrorAction Stop
     Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control' -Name 'WaitToKillServiceTimeout' -Value '2000' -ErrorAction Stop
     Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters' -Name 'DisabledComponents' -Value 0xFF -Type DWord -ErrorAction Stop
-    netsh int tcp set global autotuninglevel=normal | Out-Null
-    netsh int tcp set global chimney=disabled | Out-Null
-    netsh int tcp set global rss=enabled | Out-Null
-    netsh int tcp set global timestamps=disabled | Out-Null
     New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient' -Force | Out-Null
     Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient' -Name 'EnableMulticast' -Value 0 -ErrorAction Stop
     $successCount++
-    Write-Log '  [成功] 注册表/网络优化完成' 'Green'
+    Write-Log '  [成功] 注册表优化完成' 'Green'
 } catch {
     $failCount++
-    Write-Log '  [失败] 注册表/网络优化部分设置失败' 'Red'
+    Write-Log '  [失败] 注册表优化部分设置失败' 'Red'
+}
+# netsh 是外部命令，不会抛出 PS 异常，必须用 $LASTEXITCODE 判断
+$netshOK = $true
+netsh int tcp set global autotuninglevel=normal 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) { $netshOK = $false }
+# chimney 选项已在 Windows Server 2012 R2 后移除，Server 2022 不支持，跳过
+netsh int tcp set global rss=enabled 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) { $netshOK = $false }
+netsh int tcp set global timestamps=disabled 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) { $netshOK = $false }
+if ($netshOK) {
+    $successCount++
+    Write-Log '  [成功] 网络(TCP)优化完成' 'Green'
+} else {
+    $failCount++
+    Write-Log '  [失败] 网络(TCP)优化部分命令执行失败' 'Red'
 }
 $completedSteps++
 Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
