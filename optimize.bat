@@ -5,16 +5,21 @@ title Windows Server 2022 一键极限精简优化 (Azure专用)
 :: ============================================================
 :: 自动请求管理员权限
 :: ============================================================
-:: 使用 PowerShell IsInRole 检测管理员权限（不依赖 Server 服务）
-:: 已是管理员时退出码=0，非管理员时退出码=1
-powershell -NoProfile -ExecutionPolicy Bypass -Command "exit [int](-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator))"
+:: 使用 net session 检测管理员权限（最可靠的方法，无额外依赖）
+net session >nul 2>&1
 if %errorlevel% neq 0 (
-    echo 正在请求管理员权限，请在弹出窗口中点击"是"...
-    :: 使用 /k 而不是 /c，确保提权后的新窗口在脚本执行完毕后保持打开
-    powershell -Command "Start-Process -FilePath cmd.exe -ArgumentList '/k \"%~f0\"' -Verb RunAs"
-    echo 已在新窗口请求管理员权限，请在弹出的管理员命令行窗口中查看进度。
-    :: 使用 timeout 而不是 pause，防止 UAC 确认时的回车键意外关闭本窗口
-    timeout /t 3 /nobreak >nul
+    echo ============================================================
+    echo   需要管理员权限，正在以管理员身份重新启动...
+    echo   请在随后弹出的"用户账户控制"对话框中点击"是"
+    echo ============================================================
+    echo.
+    :: 直接以管理员身份重新启动本脚本，避免 cmd.exe /k 参数引号转义问题
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process '%~f0' -Verb RunAs"
+    echo.
+    echo 已请求管理员权限，请在UAC弹窗中点击"是"后查看新弹出的命令行窗口。
+    echo 若未出现新窗口，请右键本文件，选择"以管理员身份运行"。
+    echo.
+    pause
     exit /b
 )
 
