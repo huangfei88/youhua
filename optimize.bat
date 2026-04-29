@@ -197,7 +197,7 @@ Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
 Write-Log ''
 Write-Log '【3/10】禁用非必要服务（保留Azure/RDP/网络核心）...' 'Cyan'
 $services = @(
-    'Themes','TabletInputService','UxSms',
+    'TabletInputService',
     'Spooler','Fax',
     'WSearch','SysMain',
     'DiagTrack','dmwappushservice','WerSvc','PcaSvc','DPS','WdiServiceHost','WdiSystemHost',
