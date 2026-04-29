@@ -5,6 +5,8 @@ title Windows Server 2022 一键极限精简优化 (Azure专用)
 :: ============================================================
 :: 自动请求管理员权限
 :: ============================================================
+:: 使用 PowerShell IsInRole 检测管理员权限（不依赖 Server 服务）
+:: 已是管理员时退出码=0，非管理员时退出码=1
 powershell -NoProfile -ExecutionPolicy Bypass -Command "exit [int](-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator))"
 if %errorlevel% neq 0 (
     echo 正在请求管理员权限，请在弹出窗口中点击"是"...
