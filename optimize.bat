@@ -290,9 +290,9 @@ try {
     Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'MenuShowDelay' -Value '0' -ErrorAction Stop
     Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'DragFullWindows' -Value '0' -ErrorAction Stop
     Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name 'TaskbarAnimations' -Value 0 -ErrorAction Stop
-    $themesPersonalize = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
-    if (-not (Test-Path $themesPersonalize)) { New-Item -Path $themesPersonalize -Force | Out-Null }
-    Set-ItemProperty -Path $themesPersonalize -Name 'EnableTransparency' -Value 0 -ErrorAction Stop
+    $regThemes = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
+    if (-not (Test-Path $regThemes)) { New-Item -Path $regThemes -Force | Out-Null }
+    Set-ItemProperty -Path $regThemes -Name 'EnableTransparency' -Value 0 -ErrorAction Stop
     $successCount++
     Write-Log '  [成功] 视觉效果设置完成' 'Green'
 } catch {
@@ -398,7 +398,7 @@ try {
     New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting' -Force | Out-Null
     Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting' -Name 'Disabled' -Value 1 -ErrorAction Stop
     Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control' -Name 'WaitToKillServiceTimeout' -Value '2000' -ErrorAction Stop
-    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters' -Name 'DisabledComponents' -Value 0xFE -Type DWord -ErrorAction Stop
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters' -Name 'DisabledComponents' -Value 0xFE -Type DWord -ErrorAction Stop # 0xFE = 禁用所有IPv6接口但保留回环地址(::1)，避免Windows内部服务异常
     New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient' -Force | Out-Null
     Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient' -Name 'EnableMulticast' -Value 0 -ErrorAction Stop
     $successCount++
