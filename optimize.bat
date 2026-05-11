@@ -46,7 +46,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "('[BAT] 启动时间: ' 
 echo [BAT] 正在提取内嵌 PowerShell 脚本到临时文件...
 echo [BAT] 临时文件路径: %PS1_TMP%
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$batPath='%BAT_PATH:\=\\%'; $ps1Tmp='%PS1_TMP:\=\\%'; try { $content=Get-Content -Raw -Path $batPath -Encoding UTF8; $startMarker='::==PSSTART=='; $endMarker='::==PSEND=='; $si=$content.IndexOf($startMarker); $ei=$content.IndexOf($endMarker); if($si -lt 0 -or $ei -lt 0){throw '标记未找到，请检查文件完整性'}; $ps=$content.Substring($si+$startMarker.Length,$ei-$si-$startMarker.Length).Trim(); Set-Content -Path $ps1Tmp -Value $ps -Encoding UTF8; Write-Host ('[BAT] 脚本提取成功，行数: '+$ps.Split([char]10).Count) } catch { Write-Host ('[BAT] 提取异常: '+$_.Exception.Message); exit 1 }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$batPath='%BAT_PATH:\=\\%'; $ps1Tmp='%PS1_TMP:\=\\%'; try { $content=Get-Content -Raw -Path $batPath -Encoding UTF8; $startMarker='::==PS'+'START=='; $endMarker='::==PS'+'END=='; $si=$content.IndexOf($startMarker); $ei=$content.IndexOf($endMarker); if($si -lt 0 -or $ei -lt 0){throw '标记未找到，请检查文件完整性'}; $ps=$content.Substring($si+$startMarker.Length,$ei-$si-$startMarker.Length).Trim(); Set-Content -Path $ps1Tmp -Value $ps -Encoding UTF8; Write-Host ('[BAT] 脚本提取成功，行数: '+$ps.Split([char]10).Count) } catch { Write-Host ('[BAT] 提取异常: '+$_.Exception.Message); exit 1 }"
 
 if %errorlevel% neq 0 (
     echo.
