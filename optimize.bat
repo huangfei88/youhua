@@ -197,11 +197,11 @@ Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
 Write-Log ''
 Write-Log '【3/10】禁用非必要服务（保留Azure/RDP/网络核心）...' 'Cyan'
 $services = @(
-    'Themes','TabletInputService','UxSms',
+    'TabletInputService',
     'Spooler','Fax',
     'WSearch','SysMain',
     'DiagTrack','dmwappushservice','WerSvc','PcaSvc','DPS','WdiServiceHost','WdiSystemHost',
-    'wuauserv','UsoSvc','DoSvc','WaaSMedicSvc',
+    'wuauserv','UsoSvc','DoSvc',
     'XboxGipSvc','XblAuthManager','XblGameSave','XboxNetApiSvc',
     'lfsvc','SensorDataService','SensrSvc','SensorService',
     'bthserv','BthHFSrv','PhoneSvc','RmSvc','icssvc',
@@ -214,7 +214,7 @@ $services = @(
     'wisvc',
     'WlanSvc','WwanSvc','dot3svc',
     'CDPSvc','CDPUserSvc',
-    'cbdhsvc','InstallService',
+    'InstallService',
     'defragsvc',
     'hidserv','stisvc',
     'RemoteRegistry',
@@ -223,7 +223,6 @@ $services = @(
     'IKEEXT',
     'ShellHWDetection',
     'AeLookupSvc',
-    'seclogon',
     'HomeGroupListener','HomeGroupProvider'
 )
 foreach ($svc in $services) {
@@ -291,7 +290,9 @@ try {
     Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'MenuShowDelay' -Value '0' -ErrorAction Stop
     Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'DragFullWindows' -Value '0' -ErrorAction Stop
     Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name 'TaskbarAnimations' -Value 0 -ErrorAction Stop
-    Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'EnableTransparency' -Value 0 -ErrorAction Stop
+    $regThemes = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
+    if (-not (Test-Path $regThemes)) { New-Item -Path $regThemes -Force | Out-Null }
+    Set-ItemProperty -Path $regThemes -Name 'EnableTransparency' -Value 0 -ErrorAction Stop
     $successCount++
     Write-Log '  [成功] 视觉效果设置完成' 'Green'
 } catch {
@@ -397,7 +398,7 @@ try {
     New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting' -Force | Out-Null
     Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting' -Name 'Disabled' -Value 1 -ErrorAction Stop
     Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control' -Name 'WaitToKillServiceTimeout' -Value '2000' -ErrorAction Stop
-    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters' -Name 'DisabledComponents' -Value 0xFF -Type DWord -ErrorAction Stop
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters' -Name 'DisabledComponents' -Value 0xFE -Type DWord -ErrorAction Stop # 0xFE = 禁用所有IPv6接口但保留回环地址(::1)，避免Windows内部服务异常
     New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient' -Force | Out-Null
     Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient' -Name 'EnableMulticast' -Value 0 -ErrorAction Stop
     $successCount++
@@ -469,6 +470,7 @@ Write-Log "  优化项完成率:   $($successCount + $skipCount) / $totalItems (
 Write-Log '------------------------------------------------------------' 'Yellow'
 Write-Log '  保留服务: RDP(TermService) / WMI / DHCP / DNS' 'Yellow'
 Write-Log '  保留服务: Azure Agent / RPC / EventLog / Netlogon' 'Yellow'
+Write-Log '  保留服务: DWM(UxSms/Themes) / 剪贴板(cbdhsvc) / 辅助登录(seclogon)' 'Yellow'
 Write-Log '  Windows Defender 将在重启后完全关闭。' 'Yellow'
 Write-Log '============================================================' 'Yellow'
 Write-Log "  日志已保存至: C:\optimize_log.txt" 'Cyan'
