@@ -250,6 +250,17 @@ foreach ($svc in $services) {
         }
     }
 }
+# 确保DWM关键依赖服务（UxSms / Themes）保持自动启动，防止RDP会话DWM崩溃
+foreach ($criticalSvc in @('UxSms', 'Themes')) {
+    $cs = Get-Service -Name $criticalSvc -ErrorAction SilentlyContinue
+    if ($cs) {
+        Set-Service -Name $criticalSvc -StartupType Automatic -ErrorAction SilentlyContinue
+        if ($cs.Status -ne 'Running') {
+            Start-Service -Name $criticalSvc -ErrorAction SilentlyContinue
+        }
+        Write-Log "  [保护] DWM依赖服务已确认: $criticalSvc" 'Cyan'
+    }
+}
 Write-Log '  服务精简完成' 'Green'
 $completedSteps++
 Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
@@ -313,17 +324,17 @@ Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
 # ── 6. 页面文件固定 2048MB ──────────────────────────────────
 Write-Log ''
 Write-Log '【6/10】设置虚拟内存页面文件 2048MB...' 'Cyan'
+# 直接写注册表，比 WMI Win32_PageFileSetting 更可靠
+# Azure VM 上 WMI Provider 对 Win32_ComputerSystem.Put() 的权限受限，必然失败
 try {
-    $cs = Get-WmiObject -Class Win32_ComputerSystem -EnableAllPrivileges -ErrorAction Stop
-    $cs.AutomaticManagedPagefile = $false
-    $cs.Put() | Out-Null
-    Get-WmiObject -Class Win32_PageFileSetting | ForEach-Object { $_.Delete() }
-    Set-WmiInstance -Class Win32_PageFileSetting -Arguments @{Name='C:\pagefile.sys';InitialSize=2048;MaximumSize=2048} | Out-Null
+    $mmKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management'
+    Set-ItemProperty -Path $mmKey -Name 'AutomaticManagedPagefile' -Value 0 -Type DWord -ErrorAction Stop
+    Set-ItemProperty -Path $mmKey -Name 'PagingFiles' -Value 'C:\pagefile.sys 2048 2048' -Type MultiString -ErrorAction Stop
     $successCount++
-    Write-Log '  [成功] 页面文件已固定为 2048MB' 'Green'
+    Write-Log '  [成功] 页面文件已固定为 2048MB（重启后生效）' 'Green'
 } catch {
     $failCount++
-    Write-Log '  [失败] 页面文件设置' 'Red'
+    Write-Log "  [失败] 页面文件设置: $($_.Exception.Message)" 'Red'
 }
 $completedSteps++
 Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
@@ -409,6 +420,10 @@ try {
     Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters' -Name 'DisabledComponents' -Value 0xFE -Type DWord -ErrorAction Stop # 0xFE = 禁用所有IPv6接口但保留回环地址(::1)，避免Windows内部服务异常
     New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient' -Force | Out-Null
     Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient' -Name 'EnableMulticast' -Value 0 -ErrorAction Stop
+    # Azure VM DWM稳定性：禁用DWM硬件加速，防止Basic Display Adapter导致RDP会话DWM崩溃
+    # （Azure VM使用软件渲染适配器，DWM尝试硬件加速时会崩溃并断开RDP会话）
+    New-Item -Path 'HKCU:\Software\Microsoft\Windows\DWM' -Force | Out-Null
+    Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\DWM' -Name 'DisableHWAcceleration' -Value 1 -Type DWord -ErrorAction Stop
     $successCount++
     Write-Log '  [成功] 注册表优化完成' 'Green'
 } catch {
@@ -478,7 +493,8 @@ Write-Log "  优化项完成率:   $($successCount + $skipCount) / $totalItems (
 Write-Log '------------------------------------------------------------' 'Yellow'
 Write-Log '  保留服务: RDP(TermService) / WMI / DHCP / DNS' 'Yellow'
 Write-Log '  保留服务: Azure Agent / RPC / EventLog / Netlogon' 'Yellow'
-Write-Log '  保留服务: DWM(UxSms/Themes) / 剪贴板(cbdhsvc) / 辅助登录(seclogon)' 'Yellow'
+Write-Log '  保留服务: UxSms(DWM会话管理器) / Themes(主题) / cbdhsvc(剪贴板) / seclogon(辅助登录)' 'Yellow'
+Write-Log '  DWM硬件加速已禁用（防止Azure Basic Display Adapter导致RDP崩溃）' 'Yellow'
 Write-Log '  Windows Defender 将在重启后完全关闭。' 'Yellow'
 Write-Log '============================================================' 'Yellow'
 Write-Log "  日志已保存至: $LogFile" 'Cyan'
