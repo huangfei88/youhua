@@ -3,6 +3,7 @@ chcp 65001 >nul
 title Windows Server 2022 一键极限精简优化 (Azure专用)
 
 :: 早期日志：写入脚本所在目录（无需管理员权限，用于诊断闪退/提权失败）
+:: PowerShell 三行日志：时间戳 + 参数 + 路径 + 用户名，用 Set-Content 创建（覆盖旧记录，保持每次运行日志干净）
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$ts=Get-Date -Format 'yyyy-MM-dd HH:mm:ss'; $log='%~dp0optimize_log.txt'; @('['+$ts+'] 脚本已启动，参数: %*','['+$ts+'] 脚本路径: %~f0','['+$ts+'] 当前用户: %USERNAME%') | Set-Content -Path $log -Encoding UTF8"
 
 :: ============================================================
@@ -21,7 +22,8 @@ echo   需要管理员权限，正在以管理员身份重新启动...
 echo   请在随后弹出的"用户账户控制"对话框中点击"是"
 echo ============================================================
 echo.
-:: 用 set SELF 避免路径含空格或特殊字符时 PowerShell 字符串拼接出错；cmd /k 保持窗口不关闭
+:: 用 set SELF 避免路径含空格或特殊字符时 PowerShell 字符串拼接出错
+:: cmd /k（而非 /c）是关键：保持提权窗口始终可见，防止闪退；脚本结束后窗口停留在提示符供用户查看输出
 set "SELF=%~f0"
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd -ArgumentList ('/k \"' + $env:SELF + '\" --elevated') -Verb RunAs"
 powershell -NoProfile -ExecutionPolicy Bypass -Command "('[' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + '] 已发起提权请求（UAC弹窗）') | Add-Content -Path '%~dp0optimize_log.txt' -Encoding UTF8"
@@ -47,7 +49,7 @@ set "PS1_TMP=%TEMP%\azure_optimize_%RANDOM%.ps1"
 
 :: 写入 bat 级启动日志，追加到脚本启动时的早期日志之后
 echo [BAT] 脚本启动，准备提取并执行内嵌 PowerShell... >> "%OPTIMIZE_LOG%"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "('[BAT] 启动时间: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) | Add-Content -Path '%OPTIMIZE_LOG:\=\\%' -Encoding UTF8"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "('[BAT] 启动时间: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) | Add-Content -Path '%OPTIMIZE_LOG%' -Encoding UTF8"
 
 echo [BAT] 正在提取内嵌 PowerShell 脚本到临时文件...
 echo [BAT] 临时文件路径: %PS1_TMP%
@@ -96,7 +98,7 @@ goto :eof
 ::==PSSTART==
 $ErrorActionPreference = 'SilentlyContinue'
 $ProgressPreference    = 'SilentlyContinue'
-$LogFile = if ($env:OPTIMIZE_LOG) { $env:OPTIMIZE_LOG } else { 'C:\optimize_log.txt' }
+$LogFile = if ($env:OPTIMIZE_LOG) { $env:OPTIMIZE_LOG } else { "$env:TEMP\optimize_log.txt" }
 $successCount = 0
 $skipCount    = 0
 $failCount    = 0
