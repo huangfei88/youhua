@@ -324,17 +324,17 @@ Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
 # ── 6. 页面文件固定 2048MB ──────────────────────────────────
 Write-Log ''
 Write-Log '【6/10】设置虚拟内存页面文件 2048MB...' 'Cyan'
+# 直接写注册表，比 WMI Win32_PageFileSetting 更可靠
+# Azure VM 上 WMI Provider 对 Win32_ComputerSystem.Put() 的权限受限，必然失败
 try {
-    $cs = Get-WmiObject -Class Win32_ComputerSystem -EnableAllPrivileges -ErrorAction Stop
-    $cs.AutomaticManagedPagefile = $false
-    $cs.Put() | Out-Null
-    Get-WmiObject -Class Win32_PageFileSetting | ForEach-Object { $_.Delete() }
-    Set-WmiInstance -Class Win32_PageFileSetting -Arguments @{Name='C:\pagefile.sys';InitialSize=2048;MaximumSize=2048} | Out-Null
+    $mmKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management'
+    Set-ItemProperty -Path $mmKey -Name 'AutomaticManagedPagefile' -Value 0 -Type DWord -ErrorAction Stop
+    Set-ItemProperty -Path $mmKey -Name 'PagingFiles' -Value 'C:\pagefile.sys 2048 2048' -Type MultiString -ErrorAction Stop
     $successCount++
-    Write-Log '  [成功] 页面文件已固定为 2048MB' 'Green'
+    Write-Log '  [成功] 页面文件已固定为 2048MB（重启后生效）' 'Green'
 } catch {
     $failCount++
-    Write-Log '  [失败] 页面文件设置' 'Red'
+    Write-Log "  [失败] 页面文件设置: $($_.Exception.Message)" 'Red'
 }
 $completedSteps++
 Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
@@ -493,7 +493,7 @@ Write-Log "  优化项完成率:   $($successCount + $skipCount) / $totalItems (
 Write-Log '------------------------------------------------------------' 'Yellow'
 Write-Log '  保留服务: RDP(TermService) / WMI / DHCP / DNS' 'Yellow'
 Write-Log '  保留服务: Azure Agent / RPC / EventLog / Netlogon' 'Yellow'
-Write-Log '  保留服务: DWM会话管理器(UxSms) / 主题(Themes) / 剪贴板(cbdhsvc) / 辅助登录(seclogon)' 'Yellow'
+Write-Log '  保留服务: UxSms(DWM会话管理器) / Themes(主题) / cbdhsvc(剪贴板) / seclogon(辅助登录)' 'Yellow'
 Write-Log '  DWM硬件加速已禁用（防止Azure Basic Display Adapter导致RDP崩溃）' 'Yellow'
 Write-Log '  Windows Defender 将在重启后完全关闭。' 'Yellow'
 Write-Log '============================================================' 'Yellow'
