@@ -25,8 +25,7 @@ echo.
 :: 用 set SELF 避免路径含空格或特殊字符时 PowerShell 字符串拼接出错
 :: cmd /k（而非 /c）是关键：保持提权窗口始终可见，防止闪退；脚本结束后窗口停留在提示符供用户查看输出
 set "SELF=%~f0"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd -ArgumentList ('/k \"' + $env:SELF + '\" --elevated') -Verb RunAs"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "('[' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + '] 已发起提权请求（UAC弹窗）') | Add-Content -Path '%~dp0optimize_log.txt' -Encoding UTF8"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process cmd -ArgumentList ('/k \"' + $env:SELF + '\" --elevated') -Verb RunAs -ErrorAction Stop; ('[' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + '] 已发起提权请求（UAC弹窗）') | Add-Content -Path ([System.IO.Path]::Combine($env:SELF | Split-Path,'optimize_log.txt')) -Encoding UTF8 } catch { Write-Host '[错误] 提权失败，请右键以管理员身份运行！原因: ' + $_.Exception.Message -ForegroundColor Red; pause }"
 echo.
 echo 已请求管理员权限，请在UAC弹窗中点击"是"后查看新弹出的命令行窗口。
 echo 若未出现新窗口，请右键本文件，选择"以管理员身份运行"。
@@ -54,7 +53,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "('[BAT] 启动时间: ' 
 echo [BAT] 正在提取内嵌 PowerShell 脚本到临时文件...
 echo [BAT] 临时文件路径: %PS1_TMP%
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$batPath='%BAT_PATH:\=\\%'; $ps1Tmp='%PS1_TMP:\=\\%'; try { $content=Get-Content -Raw -Path $batPath -Encoding UTF8; $startMarker='::==PS'+'START=='; $endMarker='::==PS'+'END=='; $si=$content.IndexOf($startMarker); $ei=$content.IndexOf($endMarker); if($si -lt 0 -or $ei -lt 0){throw '标记未找到，请检查文件完整性'}; $ps=$content.Substring($si+$startMarker.Length,$ei-$si-$startMarker.Length).Trim(); Set-Content -Path $ps1Tmp -Value $ps -Encoding UTF8; Write-Host ('[BAT] 脚本提取成功，行数: '+$ps.Split([char]10).Count) } catch { Write-Host ('[BAT] 提取异常: '+$_.Exception.Message); exit 1 }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$batPath='%BAT_PATH%'; $ps1Tmp='%PS1_TMP%'; try { $content=Get-Content -Raw -Path $batPath -Encoding UTF8; $startMarker='::==PS'+'START=='; $endMarker='::==PS'+'END=='; $si=$content.IndexOf($startMarker); $ei=$content.IndexOf($endMarker); if($si -lt 0 -or $ei -lt 0){throw '标记未找到，请检查文件完整性'}; $ps=$content.Substring($si+$startMarker.Length,$ei-$si-$startMarker.Length).Trim(); Set-Content -Path $ps1Tmp -Value $ps -Encoding UTF8; Write-Host ('[BAT] 脚本提取成功，行数: '+$ps.Split([char]10).Count) } catch { Write-Host ('[BAT] 提取异常: '+$_.Exception.Message); exit 1 }"
 
 if %errorlevel% neq 0 (
     echo.
@@ -130,7 +129,7 @@ try {
     Write-Log '  [成功] 语言/时区设置完成' 'Green'
 } catch {
     $failCount++
-    Write-Log '  [失败] 语言/时区设置' 'Red'
+    Write-Log "  [失败] 语言/时区设置: $($_.Exception.Message)" 'Red'
 }
 $completedSteps++
 Write-Log "  步骤完成度: $completedSteps / $totalSteps" 'Green'
@@ -158,7 +157,7 @@ try {
     Write-Log '  [成功] Defender注册表策略设置完成' 'Gray'
 } catch {
     $failCount++
-    Write-Log '  [失败] Defender注册表策略设置' 'Red'
+    Write-Log "  [失败] Defender注册表策略设置: $($_.Exception.Message)" 'Red'
 }
 # 关闭Defender相关服务
 $defSvcs = @('WinDefend','WdNisSvc','Sense','SecurityHealthService','wscsvc','WdNisDrv')
